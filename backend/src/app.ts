@@ -20,6 +20,8 @@ import adminRoutes from "./routes/admin.routes";
 export function createApp() {
   const app = express();
 
+  app.set("trust proxy", 1);
+
   // Segurança básica de cabeçalhos HTTP
   app.use(helmet());
 
