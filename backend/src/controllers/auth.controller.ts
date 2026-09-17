@@ -25,9 +25,9 @@ export const login = asyncHandler(async (req: Request, res: Response) => {
   const token = jwt.sign(
     { sub: admin.id, email: admin.email, role: admin.role },
     env.jwtSecret,
-    { expiresIn: env.jwtExpiresIn }
+    { expiresIn: env.jwtExpiresIn as jwt.SignOptions["expiresIn"] }
   );
-
+  
   res.json({
     token,
     admin: { id: admin.id, name: admin.name, email: admin.email, role: admin.role },
