@@ -1,0 +1,75 @@
+# ============================================================
+# Blueprint do Render — Elas Sabem (banco no Neon)
+# Coloque este arquivo na RAIZ do repositório Git (mesmo nível
+# das pastas frontend/ e backend/) e use "New > Blueprint" no
+# dashboard do Render apontando para o repositório.
+#
+# Ele cria 2 recursos, ambos no plano Free:
+#   1. Backend Node/Express (elas-sabem-backend)
+#   2. Frontend estático React/Vite (elas-sabem-frontend)
+#
+# O banco (PostgreSQL) fica no Neon (neon.tech), não no Render.
+# Depois do deploy, cole a connection string do Neon na variável
+# DATABASE_URL do serviço "elas-sabem-backend" (dashboard > Environment).
+# ============================================================
+
+services:
+  # ---------------- BACKEND ----------------
+  - type: web
+    name: elas-sabem-backend
+    runtime: node
+    plan: free
+    region: oregon
+    rootDir: backend
+    buildCommand: npm install && npx prisma generate && npm run build
+    startCommand: npx prisma migrate deploy && npm start
+    healthCheckPath: /api/health
+    envVars:
+      # Preencha manualmente no dashboard com a connection string do Neon
+      # (ex: postgresql://usuario:senha@ep-xxxx.neon.tech/nomedobanco?sslmode=require)
+      - key: DATABASE_URL
+        sync: false
+      - key: JWT_SECRET
+        generateValue: true
+      - key: JWT_EXPIRES_IN
+        value: 8h
+      - key: NODE_ENV
+        value: production
+      # ATUALIZE após o primeiro deploy do frontend, caso o Render
+      # gere uma URL diferente de "elas-sabem-frontend":
+      - key: CORS_ORIGIN
+        value: https://elas-sabem-frontend.onrender.com
+      # Preencha manualmente no dashboard (sync: false = não fica no repo)
+      - key: GROQ_API_KEY
+        sync: false
+      - key: GROQ_MODEL
+        value: llama-3.3-70b-versatile
+      - key: RATE_LIMIT_WINDOW_MS
+        value: "60000"
+      - key: RATE_LIMIT_MAX
+        value: "100"
+      - key: AI_RATE_LIMIT_MAX
+        value: "10"
+      - key: SEED_ADMIN_EMAIL
+        sync: false
+      - key: SEED_ADMIN_PASSWORD
+        sync: false
+
+  # ---------------- FRONTEND ----------------
+  - type: web
+    name: elas-sabem-frontend
+    runtime: static
+    rootDir: frontend
+    buildCommand: npm install && npm run build
+    staticPublishPath: dist
+    routes:
+      # Encaminha tudo que começa com /api para o backend.
+      # ATUALIZE a URL de destino se o Render nomear o backend
+      # de forma diferente de "elas-sabem-backend":
+      - type: rewrite
+        source: /api/*
+        destination: https://elas-sabem-backend.onrender.com/api/*
+      # Fallback de SPA para o React Router (deixe por último)
+      - type: rewrite
+        source: /*
+        destination: /index.html

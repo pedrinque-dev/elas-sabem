@@ -1,0 +1,293 @@
+// ============================================================
+// ELAS SABEM — Prisma Schema
+// PostgreSQL + Prisma ORM
+// ============================================================
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ------------------------------------------------------------
+// ENUMS
+// ------------------------------------------------------------
+
+enum ContentStatus {
+  RASCUNHO
+  PUBLICADO
+  ARQUIVADO
+}
+
+enum StoryStatus {
+  PENDENTE
+  APROVADO
+  REJEITADO
+}
+
+enum ReportStatus {
+  PENDENTE
+  APROVADO
+  REJEITADO
+}
+
+enum AreaTematica {
+  ENTENDER
+  CUIDAR
+  PROTEGER
+  EDUCACAO
+  COMO_AJUDAR
+}
+
+// ------------------------------------------------------------
+// ADMIN / AUTENTICAÇÃO
+// ------------------------------------------------------------
+
+model Admin {
+  id           String   @id @default(uuid())
+  name         String
+  email        String   @unique
+  passwordHash String
+  role         String   @default("EDITOR") // EDITOR | SUPERADMIN
+  active       Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  contents Content[]  @relation("ContentAuthor")
+  reports  Report[]   @relation("ReportModerator")
+
+  @@index([email])
+}
+
+// ------------------------------------------------------------
+// CONTEÚDO EDUCATIVO (Entender / Cuidar / Proteger / Educação)
+// ------------------------------------------------------------
+
+model Category {
+  id          String       @id @default(uuid())
+  slug        String       @unique
+  name        String
+  description String?
+  area        AreaTematica
+  icon        String? // nome de ícone (lucide-react) usado no frontend
+  order       Int          @default(0)
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  contents Content[]
+
+  @@index([area])
+  @@index([slug])
+}
+
+model Content {
+  id            String        @id @default(uuid())
+  slug          String        @unique
+  title         String
+  summary       String
+  body          String // markdown
+  area          AreaTematica
+  status        ContentStatus @default(RASCUNHO)
+  coverImageUrl String?
+  readTimeMin   Int           @default(3)
+  tags          String[]      @default([])
+  publishedAt   DateTime?
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  categoryId String
+  category   Category @relation(fields: [categoryId], references: [id])
+
+  authorId String?
+  author   Admin?  @relation("ContentAuthor", fields: [authorId], references: [id])
+
+  sources ContentSource[]
+
+  @@index([area, status])
+  @@index([categoryId])
+}
+
+// Fonte/referência de um conteúdo (obrigatório citar fonte em dados/estatísticas)
+model Source {
+  id          String   @id @default(uuid())
+  name        String
+  url         String?
+  publishedAt DateTime?
+  createdAt   DateTime @default(now())
+
+  contentLinks    ContentSource[]
+  statisticLinks  Statistic[]
+}
+
+// tabela de junção N:N entre Content e Source
+model ContentSource {
+  contentId String
+  sourceId  String
+  content   Content @relation(fields: [contentId], references: [id], onDelete: Cascade)
+  source    Source  @relation(fields: [sourceId], references: [id], onDelete: Cascade)
+
+  @@id([contentId, sourceId])
+}
+
+// ------------------------------------------------------------
+// QUIZ — "Você reconhece os sinais?"
+// ------------------------------------------------------------
+
+model Quiz {
+  id          String   @id @default(uuid())
+  slug        String   @unique
+  title       String
+  description String
+  active      Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  questions Question[]
+}
+
+model Question {
+  id      String @id @default(uuid())
+  quizId  String
+  prompt  String
+  order   Int    @default(0)
+
+  quiz    Quiz     @relation(fields: [quizId], references: [id], onDelete: Cascade)
+  answers Answer[]
+
+  @@index([quizId])
+}
+
+model Answer {
+  id          String  @id @default(uuid())
+  questionId  String
+  text        String
+  explanation String // texto educativo mostrado após a escolha, sem rotular a usuária
+  isSignal    Boolean @default(false) // indica se a alternativa está associada a um sinal de alerta
+  order       Int     @default(0)
+
+  question Question @relation(fields: [questionId], references: [id], onDelete: Cascade)
+
+  @@index([questionId])
+}
+
+// ------------------------------------------------------------
+// HISTÓRIAS — "Vozes"
+// ------------------------------------------------------------
+
+model Story {
+  id          String      @id @default(uuid())
+  slug        String?     @unique
+  authorName  String // pode ser nome fictício/apelido escolhido pela autora
+  title       String
+  excerpt     String
+  body        String
+  theme       String // superação, empreendedorismo, saúde, violência, etc.
+  status      StoryStatus @default(PENDENTE)
+  featured    Boolean     @default(false)
+  submittedAt DateTime    @default(now())
+  moderatedAt DateTime?
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  @@index([status])
+  @@index([theme])
+}
+
+// ------------------------------------------------------------
+// SERVIÇOS DE APOIO + MAPA
+// ------------------------------------------------------------
+
+model ServiceCategory {
+  id       String    @id @default(uuid())
+  slug     String    @unique
+  name     String // saúde, assistência social, jurídico, segurança pública, especializado
+  icon     String?
+  services Service[]
+}
+
+model Service {
+  id           String   @id @default(uuid())
+  name         String
+  description  String?
+  categoryId   String
+  category     ServiceCategory @relation(fields: [categoryId], references: [id])
+  address      String
+  city         String
+  state        String // UF
+  latitude     Float
+  longitude    Float
+  phone        String?
+  website      String?
+  hours        String? // texto livre de horário de funcionamento
+  is24h        Boolean  @default(false)
+  verified     Boolean  @default(false) // confirmado por um administrador
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([categoryId])
+  @@index([state, city])
+}
+
+// ------------------------------------------------------------
+// DADOS / ESTATÍSTICAS PÚBLICAS
+// ------------------------------------------------------------
+
+model Statistic {
+  id          String   @id @default(uuid())
+  indicator   String // nome do indicador, ex: "Notificações de violência doméstica"
+  category    String // ex: "violência", "saúde", "segurança digital"
+  region      String // UF ou "BR" para nacional
+  period      String // ex: "2024", "2024-Q1"
+  value       Float
+  unit        String // ex: "casos", "%", "por 100 mil habitantes"
+  isDemo      Boolean  @default(true) // TRUE = dado fictício de demonstração, deve ser sinalizado na UI
+  description String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  sourceId String?
+  source   Source? @relation(fields: [sourceId], references: [id])
+
+  @@index([category, region])
+  @@index([indicator])
+}
+
+// ------------------------------------------------------------
+// MATERIAIS EDUCATIVOS (área Educação)
+// ------------------------------------------------------------
+
+model EducationalMaterial {
+  id          String   @id @default(uuid())
+  title       String
+  description String
+  type        String // cartilha | atividade | apresentação | outro
+  audience    String // ex: "adolescentes", "professores", "projetos sociais"
+  fileUrl     String? // link para material hospedado (não hospedamos binários no backend)
+  order       Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([type])
+  @@index([audience])
+}
+
+// ------------------------------------------------------------
+// RELATOS ENVIADOS PARA MODERAÇÃO (ex: histórias enviadas pelo público)
+// ------------------------------------------------------------
+
+model Report {
+  id           String       @id @default(uuid())
+  type         String // "story" | "service_correction" | "content_suggestion"
+  payload      Json // conteúdo do relato, minimizado (sem dados pessoais desnecessários)
+  status       ReportStatus @default(PENDENTE)
+  moderatorId  String?
+  moderator    Admin?       @relation("ReportModerator", fields: [moderatorId], references: [id])
+  moderatedAt  DateTime?
+  createdAt    DateTime     @default(now())
+
+  @@index([status])
+  @@index([type])
+}
